@@ -1,85 +1,97 @@
-# Welcome to your Lovable project
+# StartupDesk - AI Business Intelligence Platform 🚀
 
-## Project info
+**StartupDesk** is a comprehensive, AI-powered business intelligence and planning platform designed to help entrepreneurs turn ideas into actionable, data-driven business plans. From financial forecasting to real-world supplier intelligence, StartupDesk acts as your AI co-founder.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+![StartupDesk Dashboard](https://images.unsplash.com/photo-1460925895917-afdab827c52f?ixlib=rb-4.0.3&auto=format&fit=crop&w=2015&q=80)
 
-## How can I edit this code?
+## ✨ Key Features
 
-There are several ways of editing your application.
+- **💡 AI Business Idea Generation:** Get personalized business recommendations based on your budget, city, location, and interests.
+- **📊 Comprehensive Business Plans:** Automatically generate detailed business plans including investment requirements, revenue forecasts, break-even analysis, and marketing strategies.
+- **🌍 AI-Enriched Supplier Intelligence:** Find real, verified suppliers for your business. The AI automatically suggests required raw materials/equipment based on your business type and gives you detailed supplier comparisons, pros/cons, delivery times, and MOQs.
+- **💰 Financial Dashboards & Cash Flow:** Interactive charts visualizing pricing strategy, monthly cash flow, and cost breakdowns.
+- **📢 AI Ad Campaign Generator:** Automatically generate professional, platform-specific social media advertisements and marketing strategies.
+- **🔐 Secure Authentication:** Seamless user authentication and saved cloud profiles powered by Supabase.
+- **🌐 Multi-Language Support:** Full translation support for English, Hindi (हिन्दी), and Marathi (मराठी).
 
-**Use Lovable**
+## 🛠️ Technology Stack
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+**Frontend:**
+- **React 18** + **Vite**
+- **TypeScript**
+- **Tailwind CSS** + **shadcn/ui** for stunning, responsive UI components
+- **Lucide React** for icons
+- **Recharts** for interactive financial data visualization
 
-Changes made via Lovable will be committed automatically to this repo.
+**Backend & AI Services:**
+- **Python Flask** for auxiliary AI processing routes
+- **Supabase** (PostgreSQL Database, Edge Functions, Authentication, Row Level Security)
+- **OpenRouter API (Llama 3/Mistral models)** & **Google Gemini API** for intelligent data generation
 
-**Use your preferred IDE**
+---
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## 🚀 Getting Started
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+To run this project locally, you will need to start both the Python Flask backend and the React Vite frontend.
 
-## How to Run the Project
+### Prerequisites
+- Node.js (v18+)
+- Python (3.9+)
+- A Supabase Project (with Database and Edge Functions configured)
 
-This project requires both a Python Flask backend and a Vite React frontend.
+### 1. Start the Flask Backend (AI Services)
 
-### 1. Start the Flask Backend
+The backend handles the AI-powered product mapping, supplier intelligence, and recommendation generation.
 
-```sh
-# 1. Install Python dependencies (if not already done)
-pip install flask flask-cors google-generativeai python-dotenv requests
+```bash
+# Navigate to the backend directory
+cd backend
 
-# 2. Run the backend server
-python backend/app.py
+# Create a virtual environment (optional but recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows use: venv\Scripts\activate
+
+# Install dependencies
+pip install flask flask-cors google-generativeai python-dotenv requests openai
+
+# Create a .env file inside the backend folder and add your AI keys:
+# OPENROUTER_API_KEY=your_key_here
+# GEMINI_API_KEY=your_key_here
+
+# Run the backend server
+python app.py
 ```
+*The backend will run on `http://127.0.0.1:5000`.*
 
-The backend will run on `http://127.0.0.1:5000`.
+### 2. Start the Vite Frontend (React UI)
 
-### 2. Start the Vite Frontend
+Open a new terminal window/tab:
 
-```sh
-# 1. Install frontend dependencies
-npm i
+```bash
+# From the root directory, install frontend dependencies
+npm install
 
-# 2. Start the dev server
+# Create a .env.local file in the root directory with your Supabase credentials
+# VITE_SUPABASE_URL=your_supabase_project_url
+# VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+
+# Start the dev server
 npm run dev
 ```
+*The frontend will run on `http://localhost:8080` (or next available port).*
 
-The frontend will run on `http://localhost:8081` (or next available port).
+### 3. Supabase Edge Functions & Database (Optional Setup)
+If you are deploying this from scratch, ensure your Supabase database has the required tables (`profiles`, `saved_business_plans`, `plan_ads`, etc.) and that Edge Functions are built and deployed via the Supabase CLI:
+```bash
+supabase functions deploy generate-business-plan
+```
 
-**Edit a file directly in GitHub**
+---
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## 🤝 Contributing
 
-**Use GitHub Codespaces**
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## 📄 License
 
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+This project is open-source.
