@@ -16,5 +16,12 @@ export default defineConfig(({ mode }) => ({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+    // Ensure a single copy of react is used across all deps (prevents context conflicts)
+    dedupe: ["react", "react-dom"],
+  },
+  optimizeDeps: {
+    // Force Vite to pre-bundle these so they share one React context instance
+    include: ["leaflet", "react-leaflet"],
   },
 }));
+

@@ -35,6 +35,7 @@ import {
   MapPin,
   IndianRupee,
   Phone,
+  Mail,
   Calendar,
   User,
   Loader2,
@@ -42,6 +43,8 @@ import {
   Filter,
   Trash2,
   ShieldCheck,
+  Copy,
+  CheckCheck,
 } from "lucide-react";
 
 interface Listing {
@@ -83,6 +86,11 @@ const MarketplacePage = () => {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Contact Supplier modal state
+  const [contactListing, setContactListing] = useState<Listing | null>(null);
+  const [isSavingInquiry, setIsSavingInquiry] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -263,6 +271,37 @@ const MarketplacePage = () => {
       listing.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       listing.description.toLowerCase().includes(searchQuery.toLowerCase()),
   );
+
+  // Handle Contact Supplier click — show modal + log to Supabase
+  const handleContactSupplier = async (listing: Listing) => {
+    setContactListing(listing);
+
+    // Save inquiry to Supabase (only if user is logged in)
+    if (user) {
+      setIsSavingInquiry(true);
+      try {
+        await supabase.from("supplier_inquiries").insert([{
+          user_id: user.id,
+          listing_id: listing.id,
+          listing_title: listing.title,
+          contact_info: listing.contact_info,
+          location: listing.location,
+          is_gov_verified: listing.is_gov_verified ?? false,
+        }]);
+      } catch (err) {
+        console.error("Failed to log inquiry:", err);
+      } finally {
+        setIsSavingInquiry(false);
+      }
+    }
+  };
+
+  const handleCopy = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    toast.success("Copied to clipboard!");
+    setTimeout(() => setCopiedField(null), 2000);
+  };
 
   const getTypeIcon = (type: string) => {
     switch (type) {
@@ -489,7 +528,9 @@ const MarketplacePage = () => {
                               <Button
                                 variant="hero"
                                 className="w-full font-medium h-10 hover:scale-105 transition-transform"
+                                onClick={() => handleContactSupplier(listing)}
                               >
+                                <Phone className="h-4 w-4 mr-2" />
                                 {listing.is_gov_verified
                                   ? "Inquiry Official Record"
                                   : "Contact Supplier"}
@@ -518,6 +559,112 @@ const MarketplacePage = () => {
         </div>
       </main>
       <Footer />
+
+      {/* ── Contact Supplier Modal ── */}
+      <Dialog open={!!contactListing} onOpenChange={(open) => !open && setContactListing(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {contactListing?.is_gov_verified ? (
+                <>
+                  <ShieldCheck className="h-5 w-5 text-blue-400" />
+                  Official MSME Record
+                </>
+              ) : (
+                <>
+                  <Phone className="h-5 w-5 text-primary" />
+                  Contact Supplier
+                </>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {contactListing?.is_gov_verified
+                ? "This is a government-verified MSME registered enterprise."
+                : "Reach out to this supplier directly using the details below."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {contactListing && (
+            <div className="space-y-4 py-2">
+              {/* Supplier Name */}
+              <div className="p-4 rounded-lg glass-subtle border">
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Supplier / Business</p>
+                <p className="font-bold text-lg">
+                  {contactListing.title.replace(/^(Supplier: |Manufacturer: |Export Partner: )/, "")}
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">{contactListing.description}</p>
+              </div>
+
+              {/* Location */}
+              <div className="flex items-center gap-3 p-3 rounded-lg glass-subtle border">
+                <MapPin className="h-5 w-5 text-primary shrink-0" />
+                <div className="flex-1">
+                  <p className="text-xs text-muted-foreground">Location</p>
+                  <p className="font-medium">{contactListing.location}</p>
+                </div>
+              </div>
+
+              {/* Contact Info */}
+              <div className="p-3 rounded-lg glass-subtle border">
+                <p className="text-xs text-muted-foreground mb-2">Contact Details</p>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    {contactListing.contact_info?.includes("@") ? (
+                      <Mail className="h-5 w-5 text-primary shrink-0" />
+                    ) : (
+                      <Phone className="h-5 w-5 text-primary shrink-0" />
+                    )}
+                    <p className="font-semibold text-foreground">{contactListing.contact_info}</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => handleCopy(contactListing.contact_info!, "contact")}
+                  >
+                    {copiedField === "contact" ? (
+                      <CheckCheck className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Category & Type badge */}
+              <div className="flex gap-2">
+                <Badge variant="secondary" className="glass">{contactListing.category}</Badge>
+                <Badge variant="outline" className={getTypeColor(contactListing.listing_type)}>
+                  {contactListing.listing_type === "sell" ? "For Sale" : contactListing.listing_type === "buy" ? "Raw Material" : "Export"}
+                </Badge>
+                {contactListing.is_gov_verified && (
+                  <Badge className="gap-1 bg-blue-500/10 text-blue-400 border-blue-400/30">
+                    <ShieldCheck className="h-3 w-3" /> Govt Verified
+                  </Badge>
+                )}
+              </div>
+
+              {/* Inquiry logged notice */}
+              {user && (
+                <p className="text-xs text-muted-foreground text-center">
+                  {isSavingInquiry ? "Logging inquiry..." : "✅ This inquiry has been saved to your account."}
+                </p>
+              )}
+              {!user && (
+                <p className="text-xs text-amber-500 text-center">
+                  ⚠️ Sign in to save this inquiry to your account.
+                </p>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setContactListing(null)} className="w-full">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create Listing Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

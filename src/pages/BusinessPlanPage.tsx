@@ -10,6 +10,8 @@ import { CostCalculator } from "@/components/calculator/CostCalculator";
 import { AdPostGenerator } from "@/components/marketing/AdPostGenerator";
 import { CashFlowWidget } from "@/components/dashboard/CashFlowWidget";
 import { FaceAuthGuard } from "@/components/auth/FaceAuthGuard";
+import { RecipeFlow } from "@/components/bi/RecipeFlow";
+import { PitchDeckGenerator } from "@/components/dashboard/PitchDeckGenerator";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -26,6 +28,7 @@ import {
 import { BusinessPlan, BusinessIdea, UserProfile } from "@/types/business";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { BusinessNameStep } from "@/components/form/BusinessNameStep";
 import { toast } from "sonner";
 import { generateBusinessPlanPDF } from "@/utils/pdfGenerator";
 import {
@@ -48,6 +51,55 @@ import {
   ShoppingCart,
   LayoutDashboard,
 } from "lucide-react";
+import type { ProductionStep } from "@/types/business";
+
+// ── Product-selector + RecipeFlow for the Raw Materials tab ──────────────────
+function ProductMaterialsView({
+  items,
+  businessType,
+  fallbackPlan,
+}: {
+  items: string[];
+  businessType: string;
+  fallbackPlan?: ProductionStep[];
+}) {
+  const [selected, setSelected] = useState(items[0] || "");
+
+  return (
+    <div className="space-y-6">
+      {/* Product pills */}
+      <div className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Select a product to view its raw materials & recipe
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {items.map((item) => (
+            <button
+              key={item}
+              onClick={() => setSelected(item)}
+              className={`px-4 py-2 rounded-full text-sm font-medium border transition-all ${selected === item
+                ? "bg-primary text-primary-foreground border-primary shadow-md shadow-primary/20"
+                : "bg-muted/40 text-muted-foreground border-border/50 hover:border-primary/40 hover:text-foreground"
+                }`}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* RecipeFlow for selected product */}
+      {selected && (
+        <RecipeFlow
+          key={selected}           // remount when product changes → triggers fresh AI fetch
+          businessType={businessType}
+          productName={selected}
+          fallbackPlan={fallbackPlan}
+        />
+      )}
+    </div>
+  );
+}
 
 const BusinessPlanPage = () => {
   const navigate = useNavigate();
@@ -62,6 +114,7 @@ const BusinessPlanPage = () => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [planName, setPlanName] = useState("");
+  const [saveNameChosen, setSaveNameChosen] = useState(false); // whether name step is done
   const [planId, setPlanId] = useState<string>("");
 
   useEffect(() => {
@@ -113,22 +166,23 @@ const BusinessPlanPage = () => {
     setError(null);
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke(
-        "generate-business-plan",
-        {
-          body: {
-            userProfile: profile,
-            selectedBusiness: business,
-            selectedProduct: product,
-          },
-        },
-      );
+      // TEMPORARY: Using backend endpoint instead of Supabase Edge Function due to 401 API Gateway Error
+      const res = await fetch("http://127.0.0.1:5000/api/bi/generate-business-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userProfile: profile,
+          selectedBusiness: business,
+          selectedProduct: product,
+        }),
+      });
 
-      if (fnError) {
-        const bodyError = fnError.context?.json?.error;
-        throw new Error(bodyError || fnError.message);
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to generate business plan");
       }
 
+      const data = await res.json();
       if (data.error) throw new Error(data.error);
       setPlan(data);
       // Save for Dashboard to load
@@ -315,25 +369,6 @@ const BusinessPlanPage = () => {
                   </p>
                 </div>
               </div>
-
-              {/* Key Metrics */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
-                {[
-                  { icon: IndianRupee, label: "Investment", value: plan.idea.investmentRange },
-                  { icon: TrendingUp, label: "Revenue", value: plan.idea.expectedRevenue },
-                  { icon: CheckCircle2, label: "Profit Margin", value: plan.idea.profitMargin },
-                  { icon: Lightbulb, label: "Break-even", value: plan.idea.breakEvenTime },
-                ].map((stat) => (
-                  <div
-                    key={stat.label}
-                    className="bg-white/15 backdrop-blur-md rounded-2xl p-4 border border-white/20 hover:bg-white/25 transition-colors"
-                  >
-                    <stat.icon className="h-5 w-5 text-white/70 mb-2" />
-                    <p className="text-xs text-white/60 uppercase tracking-wider font-semibold mb-1">{stat.label}</p>
-                    <p className="font-bold text-white text-sm leading-tight">{stat.value}</p>
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
 
@@ -368,6 +403,9 @@ const BusinessPlanPage = () => {
             {/* ── Dashboard ── */}
             <TabsContent value="dashboard" className="animate-fade-in">
               <ProgressDashboard plan={plan} />
+              <div className="mt-8">
+                <PitchDeckGenerator businessPlan={plan} />
+              </div>
             </TabsContent>
 
             {/* ── Financials ── */}
@@ -389,54 +427,35 @@ const BusinessPlanPage = () => {
 
             {/* ── Suppliers ── */}
             <TabsContent value="suppliers" className="animate-fade-in">
-              <EnrichedSupplierTab
-                materials={plan.rawMaterials || []}
-                businessType={plan.idea.name || plan.idea.description || "Business"}
-                city={userProfile?.city || "India"}
-              />
+              {(() => {
+                const productList = (plan.product?.name || "")
+                  .split(",").map((p: string) => p.trim()).filter((p: string) => p.length > 0);
+                return (
+                  <EnrichedSupplierTab
+                    materials={[]}
+                    businessType={plan.idea.name || plan.idea.description || "Business"}
+                    productName={productList[0] || plan.product?.name}
+                    products={productList.length > 0 ? productList : undefined}
+                    city={userProfile?.city || "India"}
+                  />
+                );
+              })()}
             </TabsContent>
 
             {/* ── Raw Materials ── */}
             <TabsContent value="materials" className="animate-fade-in">
-              <PlanSection icon={Package} title="Raw Material & Supplier Guidance">
-                <div className="space-y-4">
-                  {plan.rawMaterials?.map((material, index) => (
-                    <div key={index} className="p-5 rounded-2xl bg-muted/30 border border-border/50 space-y-3 hover:border-primary/30 transition-colors">
-                      <div className="flex justify-between items-start">
-                        <h4 className="font-semibold text-base">{material.name}</h4>
-                        <Badge variant="secondary" className="font-bold">{material.estimatedCost}</Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground"><strong>Source:</strong> {material.sourceType}</p>
-                      <div className="flex items-start gap-2 text-sm text-primary bg-primary/5 border border-primary/10 p-3 rounded-xl">
-                        <Lightbulb className="h-4 w-4 mt-0.5 shrink-0" />
-                        <span>{material.tips}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </PlanSection>
+              {(() => {
+                // Split comma-joined selected products into individual pills
+                const productList = (plan.product?.name || "")
+                  .split(",")
+                  .map((p: string) => p.trim())
+                  .filter((p: string) => p.length > 0);
 
-              {plan.productionPlan && plan.productionPlan.length > 0 && (
-                <div className="mt-8">
-                  <PlanSection icon={Package} title="Production & Manufacturing Steps">
-                    <div className="space-y-4">
-                      {plan.productionPlan.map((step, index) => (
-                        <div key={index} className="p-5 rounded-2xl border border-border/50 bg-card space-y-3 shadow-sm hover:border-primary/30 transition-colors">
-                          <h4 className="font-semibold text-base text-primary flex items-center gap-3">
-                            <span className="flex items-center justify-center w-7 h-7 rounded-full bg-primary/10 text-primary text-sm font-bold border border-primary/20">{index + 1}</span>
-                            {step.step}
-                          </h4>
-                          <p className="text-sm text-muted-foreground leading-relaxed pl-10">{step.description}</p>
-                          <div className="flex items-start gap-2 text-sm text-success bg-success/5 border border-success/10 p-3 rounded-xl ml-10">
-                            <IndianRupee className="h-4 w-4 mt-0.5 shrink-0" />
-                            <span>{step.costVsTime}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </PlanSection>
-                </div>
-              )}
+                // If no product selected, use business type as single item
+                const items = productList.length > 0 ? productList : [plan.idea.name || "Business"];
+
+                return <ProductMaterialsView items={items} businessType={plan.idea.name || plan.idea.description || "Business"} fallbackPlan={plan.productionPlan} />;
+              })()}
             </TabsContent>
 
             {/* ── Workforce ── */}
@@ -470,7 +489,52 @@ const BusinessPlanPage = () => {
             </TabsContent>
 
             {/* ── Location ── */}
-            <TabsContent value="location" className="animate-fade-in">
+            <TabsContent value="location" className="animate-fade-in space-y-6">
+
+              {/* ── Map ──────────────────────────────────────────────────── */}
+              {(() => {
+                const rawCity = (userProfile?.city && userProfile.city.toLowerCase() !== "india")
+                  ? `${userProfile.city}, India`
+                  : "India";
+                const city = encodeURIComponent(rawCity);
+                // Google Maps embed — no API key needed, auto-zooms to the named location
+                const mapSrc = `https://maps.google.com/maps?q=${city}&z=13&output=embed`;
+                return (
+                  <div className="rounded-2xl overflow-hidden border border-border/50 shadow-md">
+                    {/* Map header */}
+                    <div className="flex items-center justify-between px-5 py-3 bg-muted/40 border-b border-border/50">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-primary" />
+                        <span className="font-semibold text-sm">
+                          {userProfile?.city || "India"} — Business Location Map
+                        </span>
+                      </div>
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${city}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary hover:underline"
+                      >
+                        Open in Google Maps ↗
+                      </a>
+                    </div>
+                    <iframe
+                      title="Business Location Map"
+                      src={mapSrc}
+                      className="w-full h-72 md:h-96"
+                      style={{ border: 0 }}
+                      loading="lazy"
+                      allowFullScreen
+                    />
+                    <div className="px-5 py-2.5 bg-muted/30 border-t border-border/40 text-xs text-muted-foreground">
+                      📍 Showing <strong>{userProfile?.city || "India"}</strong> — scout shop locations, competitors & foot traffic zones
+                    </div>
+                  </div>
+                );
+              })()}
+
+
+              {/* ── Location advice cards ─────────────────────────────── */}
               <PlanSection icon={MapPin} title="Offline Setup & Location Advice">
                 <div className="space-y-6">
                   <div className="grid md:grid-cols-3 gap-4">
@@ -675,32 +739,43 @@ const BusinessPlanPage = () => {
       <Footer />
 
       {/* ── SAVE DIALOG ─────────────────────────────────────────── */}
-      <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
-        <DialogContent>
+      <Dialog open={saveDialogOpen} onOpenChange={(open) => { setSaveDialogOpen(open); if (!open) setSaveNameChosen(false); }}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Save Business Plan</DialogTitle>
             <DialogDescription>
               {user
-                ? "Give your business plan a name to save it for later access."
+                ? saveNameChosen
+                  ? "Ready to save your business plan."
+                  : "First, give your business a name."
                 : "Sign in to save your business plan and access it later."}
             </DialogDescription>
           </DialogHeader>
           {user ? (
-            <>
-              <div className="py-4">
-                <Input
-                  placeholder="Enter plan name..."
-                  value={planName}
-                  onChange={(e) => setPlanName(e.target.value)}
+            saveNameChosen ? (
+              /* Confirm & save */
+              <>
+                <div className="py-4 space-y-2">
+                  <p className="text-sm text-muted-foreground">Saving as:</p>
+                  <p className="text-lg font-bold">{planName}</p>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setSaveNameChosen(false)}>Change Name</Button>
+                  <Button onClick={handleSavePlan} disabled={isSaving}>
+                    {isSaving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</> : <><Save className="mr-2 h-4 w-4" />Save Plan</>}
+                  </Button>
+                </DialogFooter>
+              </>
+            ) : (
+              /* Name picking step */
+              <div className="py-2">
+                <BusinessNameStep
+                  businessIdea={selectedBusiness?.description || selectedBusiness?.name || ""}
+                  industry={selectedBusiness?.name || ""}
+                  onComplete={(name) => { setPlanName(name); setSaveNameChosen(true); }}
                 />
               </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
-                <Button onClick={handleSavePlan} disabled={isSaving || !planName.trim()}>
-                  {isSaving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</> : <><Save className="mr-2 h-4 w-4" />Save Plan</>}
-                </Button>
-              </DialogFooter>
-            </>
+            )
           ) : (
             <DialogFooter>
               <Button variant="outline" onClick={() => setSaveDialogOpen(false)}>Cancel</Button>

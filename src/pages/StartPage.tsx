@@ -1,9 +1,10 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
-import { UserInputForm } from "@/components/form/UserInputForm";
 import { BudgetPredictionFlow } from "@/components/form/BudgetPredictionFlow";
-import { BusinessNameStep } from "@/components/form/BusinessNameStep";
+import { ProductSelector } from "@/components/recommendations/ProductSelector";
+import { UserInputForm } from "@/components/form/UserInputForm";
 import {
   Card,
   CardContent,
@@ -13,26 +14,84 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Lightbulb, TrendingUp } from "lucide-react";
+import { BusinessIdea, Product } from "@/types/business";
+import { toast } from "sonner";
 
 const StartPage = () => {
+  const navigate = useNavigate();
   const [showBudgetPrediction, setShowBudgetPrediction] = useState(false);
-  const [budgetData, setBudgetData] = useState<any>(null);
-  const [showBusinessName, setShowBusinessName] = useState(false);
-  const [businessName, setBusinessName] = useState("");
-  const [showMainForm, setShowMainForm] = useState(false);
+  const [showQuickStart, setShowQuickStart] = useState(false);
+  const [productSelectorOpen, setProductSelectorOpen] = useState(false);
+  const [selectedBusinessIdea, setSelectedBusinessIdea] = useState<BusinessIdea | null>(null);
 
+  // Step 1: Budget analysis done → build a placeholder BusinessIdea, open product selector
   const handleBudgetComplete = (data: any) => {
-    setBudgetData(data);
-    setShowBusinessName(true); // Show business name step after budget
+    setShowBudgetPrediction(false);
+
+    const ideaText = data.business_idea || "My Business";
+
+    // Use a placeholder name — user will set the real name when they Save the plan
+    const idea: BusinessIdea = {
+      id: `budget-flow-${Date.now()}`,
+      name: ideaText.length > 50 ? ideaText.substring(0, 50) + "…" : ideaText,
+      description: ideaText,
+      investmentRange: `₹${Math.round(data.user_budget || 0).toLocaleString("en-IN")}`,
+      expectedRevenue: "Based on your plan",
+      profitMargin: "20-30%",
+      riskLevel: data.feasibility?.status === "feasible" ? "Low" : "Medium",
+      breakEvenTime: "6-12 months",
+      icon: "💼",
+    };
+
+    setSelectedBusinessIdea(idea);
+
+    sessionStorage.setItem(
+      "userProfile",
+      JSON.stringify({
+        budget: data.user_budget || 0,
+        city: "India",
+        interest: ideaText,
+        experience: "Beginner",
+      })
+    );
+    sessionStorage.setItem("selectedBusiness", JSON.stringify(idea));
+
+    // Open product selector immediately — user names the business when they Save
+    setProductSelectorOpen(true);
   };
 
-  const handleBusinessNameComplete = (name: string) => {
-    setBusinessName(name);
-    setShowMainForm(true); // Show main form after business name
-  };
+  // Step 2: Product selected → navigate to plan dashboard
+  const handleSelectProduct = (products: Product[]) => {
+    if (products && products.length > 0) {
+      const mergedProduct: Product = {
+        id: products.map((p) => p.id).join(","),
+        name: products.map((p) => p.name).join(", "),
+        description: "Selected products: " + products.map((p) => p.name).join(", "),
+        business_id: products[0].business_id,
+        avg_selling_price: Math.round(
+          products.reduce((sum, p) => sum + Number(p.avg_selling_price || 0), 0) /
+          products.length
+        ),
+      };
+      sessionStorage.setItem("selectedProduct", JSON.stringify(mergedProduct));
+    } else {
+      sessionStorage.removeItem("selectedProduct");
+    }
 
-  const handleSkipPrediction = () => {
-    setShowBusinessName(true); // Still ask for business name even if skipping budget
+    sessionStorage.setItem(
+      "loadedPlan",
+      JSON.stringify({
+        rawMaterials: [],
+        workforce: [],
+        location: { areaType: "Local", shopSize: "TBD", rentEstimate: "TBD", setupNeeds: [] },
+        pricing: { costComponents: [], costPrice: "0", marketPriceRange: "0-0", suggestedPrice: "0", profitMargin: "0%" },
+        marketing: { launchPlan: [], onlineStrategies: [], offlineStrategies: [], lowBudgetIdeas: [] },
+        growth: { month1to3: [], month4to6: [], expansionIdeas: [], mistakesToAvoid: [] },
+      })
+    );
+
+    toast.success("Business Plan created! Redirecting to your dashboard...");
+    navigate("/plan");
   };
 
   return (
@@ -40,8 +99,9 @@ const StartPage = () => {
       <Header />
       <main className="flex-1 py-12 px-4 gradient-subtle">
         <div className="container">
+
           {/* Initial Choice Screen */}
-          {!showBudgetPrediction && !showMainForm && (
+          {!showBudgetPrediction && !showQuickStart && (
             <div className="max-w-4xl mx-auto space-y-8">
               <div className="text-center mb-8">
                 <h1 className="text-3xl font-bold tracking-tight mb-2">
@@ -54,7 +114,7 @@ const StartPage = () => {
 
               <div className="grid md:grid-cols-2 gap-6">
                 {/* Option 1: AI Budget Prediction */}
-                <Card className="hover:shadow-lg transition-shadow cursor-pointer border-2 hover:border-primary">
+                <Card className="hover:shadow-lg transition-shadow border-2 hover:border-primary">
                   <CardHeader>
                     <div className="flex items-center gap-3 mb-2">
                       <div className="p-2 bg-primary/10 rounded-lg">
@@ -63,41 +123,24 @@ const StartPage = () => {
                       <CardTitle>AI Budget Prediction</CardTitle>
                     </div>
                     <CardDescription className="text-base">
-                      Describe your business idea and let AI predict the
-                      required budget with detailed breakdown
+                      Describe your idea → AI budget analysis → select products → dashboard
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <ul className="space-y-2 text-sm">
-                      <li className="flex items-start gap-2">
-                        <span className="text-primary mt-1">✓</span>
-                        <span>Get AI-powered budget estimation</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-primary mt-1">✓</span>
-                        <span>Detailed cost breakdown</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-primary mt-1">✓</span>
-                        <span>Feasibility analysis</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-primary mt-1">✓</span>
-                        <span>Cost optimization suggestions</span>
-                      </li>
+                      <li className="flex items-start gap-2"><span className="text-primary mt-1">✓</span><span>AI-powered budget estimation</span></li>
+                      <li className="flex items-start gap-2"><span className="text-primary mt-1">✓</span><span>Feasibility analysis</span></li>
+                      <li className="flex items-start gap-2"><span className="text-primary mt-1">✓</span><span>Select products for your business</span></li>
+                      <li className="flex items-start gap-2"><span className="text-primary mt-1">✓</span><span>Name your business when you save</span></li>
                     </ul>
-                    <Button
-                      onClick={() => setShowBudgetPrediction(true)}
-                      className="w-full"
-                      size="lg"
-                    >
+                    <Button onClick={() => setShowBudgetPrediction(true)} className="w-full" size="lg">
                       Start with AI Prediction
                     </Button>
                   </CardContent>
                 </Card>
 
-                {/* Option 2: Direct Form */}
-                <Card className="hover:shadow-lg transition-shadow cursor-pointer border-2 hover:border-primary">
+                {/* Option 2: Quick Start */}
+                <Card className="hover:shadow-lg transition-shadow border-2 hover:border-primary">
                   <CardHeader>
                     <div className="flex items-center gap-3 mb-2">
                       <div className="p-2 bg-primary/10 rounded-lg">
@@ -106,35 +149,17 @@ const StartPage = () => {
                       <CardTitle>Quick Start</CardTitle>
                     </div>
                     <CardDescription className="text-base">
-                      Already know your budget? Jump straight to business
-                      recommendations
+                      Already know your budget? Jump straight to recommendations
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <ul className="space-y-2 text-sm">
-                      <li className="flex items-start gap-2">
-                        <span className="text-primary mt-1">✓</span>
-                        <span>Faster process</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-primary mt-1">✓</span>
-                        <span>Enter your known budget</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-primary mt-1">✓</span>
-                        <span>Get instant recommendations</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-primary mt-1">✓</span>
-                        <span>Skip AI analysis</span>
-                      </li>
+                      <li className="flex items-start gap-2"><span className="text-primary mt-1">✓</span><span>Faster process</span></li>
+                      <li className="flex items-start gap-2"><span className="text-primary mt-1">✓</span><span>Enter your known budget</span></li>
+                      <li className="flex items-start gap-2"><span className="text-primary mt-1">✓</span><span>Get instant recommendations</span></li>
+                      <li className="flex items-start gap-2"><span className="text-primary mt-1">✓</span><span>Skip AI analysis</span></li>
                     </ul>
-                    <Button
-                      onClick={handleSkipPrediction}
-                      variant="outline"
-                      className="w-full"
-                      size="lg"
-                    >
+                    <Button onClick={() => setShowQuickStart(true)} variant="outline" className="w-full" size="lg">
                       Skip to Form
                     </Button>
                   </CardContent>
@@ -144,12 +169,10 @@ const StartPage = () => {
           )}
 
           {/* Budget Prediction Flow */}
-          {showBudgetPrediction && !showMainForm && (
+          {showBudgetPrediction && (
             <div className="max-w-3xl mx-auto space-y-6">
               <div className="text-center mb-6">
-                <h1 className="text-3xl font-bold tracking-tight mb-2">
-                  AI Budget Prediction
-                </h1>
+                <h1 className="text-3xl font-bold tracking-tight mb-2">AI Budget Prediction</h1>
                 <p className="text-muted-foreground">
                   Describe your business idea and get an instant budget estimate
                 </p>
@@ -158,7 +181,7 @@ const StartPage = () => {
               <div className="text-center">
                 <Button
                   variant="ghost"
-                  onClick={handleSkipPrediction}
+                  onClick={() => { setShowBudgetPrediction(false); setShowQuickStart(true); }}
                   className="text-muted-foreground"
                 >
                   Skip and enter budget manually
@@ -167,86 +190,30 @@ const StartPage = () => {
             </div>
           )}
 
-          {/* Business Name Step */}
-          {showBusinessName && !showMainForm && (
-            <div className="max-w-3xl mx-auto space-y-6">
-              <div className="text-center mb-6">
-                <h1 className="text-3xl font-bold tracking-tight mb-2">
-                  Name Your Business
-                </h1>
-                <p className="text-muted-foreground">
-                  Choose a memorable name that represents your brand
-                </p>
-              </div>
-              <BusinessNameStep
-                businessIdea={budgetData?.business_type || ""}
-                industry={budgetData?.business_type || ""}
-                onComplete={handleBusinessNameComplete}
-              />
-            </div>
-          )}
-
-          {/* Main User Input Form */}
-          {showMainForm && (
+          {/* Quick Start — original UserInputForm */}
+          {showQuickStart && (
             <div className="space-y-6">
               <div className="text-center mb-8">
-                <h1 className="text-3xl font-bold tracking-tight mb-2">
-                  Complete Your Profile
-                </h1>
+                <h1 className="text-3xl font-bold tracking-tight mb-2">Complete Your Profile</h1>
                 <p className="text-muted-foreground max-w-lg mx-auto">
-                  {budgetData
-                    ? "Great! Now let's gather a few more details to find the perfect business for you."
-                    : "Answer a few questions and our AI will recommend the best business opportunities tailored to your situation."}
+                  Answer a few questions and our AI will recommend the best business opportunities.
                 </p>
               </div>
-
-              {/* Show Budget Summary if prediction was done */}
-              {budgetData && (
-                <div className="max-w-xl mx-auto mb-6">
-                  <Card className="bg-primary/5 border-primary/20">
-                    <CardContent className="pt-6">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm text-muted-foreground">
-                            AI Predicted Budget
-                          </p>
-                          <p className="text-2xl font-bold text-primary">
-                            ₹
-                            {budgetData.predicted_budget?.toLocaleString(
-                              "en-IN",
-                            )}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">
-                            Your Budget
-                          </p>
-                          <p className="text-2xl font-bold text-green-600">
-                            ₹{budgetData.user_budget?.toLocaleString("en-IN")}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">
-                            Status
-                          </p>
-                          <p className="text-sm font-semibold capitalize">
-                            {budgetData.feasibility?.status || "Analyzed"}
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
-
-              <UserInputForm
-                initialBudget={budgetData?.user_budget?.toString()}
-              />
+              <UserInputForm />
             </div>
           )}
+
         </div>
       </main>
       <Footer />
+
+      {/* Product Selector Dialog — opens after budget analysis */}
+      <ProductSelector
+        open={productSelectorOpen}
+        onOpenChange={setProductSelectorOpen}
+        businessIdea={selectedBusinessIdea}
+        onSelectProduct={handleSelectProduct}
+      />
     </div>
   );
 };

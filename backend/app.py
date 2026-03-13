@@ -36,16 +36,16 @@ except Exception as _bi_err:
 MOCK_AI = os.getenv("MOCK_AI", "False").lower() == "true"
 print(f"DEBUG: MOCK_AI MODE: {MOCK_AI} (from env: {os.getenv('MOCK_AI')})")
 
-# OpenRouter Configuration
-openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+# Groq Configuration (replaces OpenRouter — fast, free, OpenAI-compatible)
+groq_api_key = os.getenv("GROQ_API_KEY")
 client = OpenAI(
-  base_url="https://openrouter.ai/api/v1",
-  api_key=openrouter_api_key,
+  base_url="https://api.groq.com/openai/v1",
+  api_key=groq_api_key,
 )
 
 
-# We use Llama 3.1 8B for better rate limit headroom (TPD/TPM)
-MODEL_NAME = "meta-llama/llama-3.1-8b-instruct"
+# Groq model name for llama 3.1 8B
+MODEL_NAME = "llama-3.1-8b-instant"
 
 # Supabase Configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -2223,8 +2223,82 @@ def update_user_profile():
         return jsonify({"error": f"Failed to update profile: {str(e)}"}), 500
 
 
+# ==========================================
+# ADVANCED FEATURES EXTENSIONS (NON-BREAKING)
+# ==========================================
+
+import base64
+from services.pitch_deck_service import create_pitch_deck, create_bank_loan_pdf
+from services.trends_service import get_market_trends
+
+@app.route("/api/generate-pitch-deck", methods=["POST"])
+def api_generate_pitch_deck():
+    """
+    Receives a BusinessPlan JSON and returns base64 encoded PPTX and PDF files.
+    """
+    try:
+        data = request.json or {}
+        business_plan = data.get("business_plan")
+        if not business_plan:
+            return jsonify({"error": "Business plan data is required"}), 400
+            
+        pptx_bytes = create_pitch_deck(business_plan)
+        pdf_bytes = create_bank_loan_pdf(business_plan)
+        
+        pptx_b64 = base64.b64encode(pptx_bytes).decode('utf-8')
+        pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
+        
+        return jsonify({
+            "success": True,
+            "pptx_base64": pptx_b64,
+            "pdf_base64": pdf_b64,
+            "message": "Pitch deck generated successfully"
+        })
+        
+    except Exception as e:
+        import traceback
+        logger.error(f"Error generation pitch deck: {str(e)}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/market-trends", methods=["GET"])
+def api_market_trends():
+    """
+    Returns simulated hyper-local market trends for a user's city.
+    """
+    try:
+        city = request.args.get("city", "India")
+        trends_data = get_market_trends(city)
+        return jsonify({
+            "success": True,
+            "data": trends_data
+        })
+    except Exception as e:
+        logger.error(f"Error fetching market trends: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+@app.route("/api/analyze-competitor", methods=["POST"])
+def api_analyze_competitor():
+    """
+    Analyzes a competitor url or name using AI and generates a SWOT matrix.
+    """
+    try:
+        data = request.json or {}
+        competitor_query = data.get("competitor")
+        industry = data.get("industry", "general")
+        
+        if not competitor_query:
+            return jsonify({"error": "Competitor name or URL is required"}), 400
+            
+        from services.competitor_service import analyze_competitor
+        analysis = analyze_competitor(competitor_query, industry)
+        
+        return jsonify({
+            "success": True,
+            "data": analysis
+        })
+    except Exception as e:
+        logger.error(f"Error analyzing competitor: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == "__main__":
     app.run(debug=True)
-
-
-

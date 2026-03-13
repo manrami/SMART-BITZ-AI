@@ -9,7 +9,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -17,10 +16,11 @@ import {
   Wallet,
   Plus,
   TrendingUp,
-  TrendingDown,
   Loader2,
   ArrowUpCircle,
   ArrowDownCircle,
+  AlertCircle,
+  Target,
 } from "lucide-react";
 import {
   Dialog,
@@ -58,18 +58,22 @@ interface Transaction {
   description: string;
 }
 
+const EMPTY_FORM = {
+  date: new Date().toISOString().split("T")[0],
+  type: "income" as "income" | "expense",
+  amount: "",
+  category: "",
+  description: "",
+};
+
 export const CashFlowWidget = () => {
   const { user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [newTransaction, setNewTransaction] = useState({
-    date: new Date().toISOString().split("T")[0],
-    type: "income" as "income" | "expense",
-    amount: "",
-    category: "",
-    description: "",
-  });
+  const [dbError, setDbError] = useState<string | null>(null);
+  const [newTransaction, setNewTransaction] = useState(EMPTY_FORM);
 
   // Projection State
   const [projectionInputs, setProjectionInputs] = useState<CashFlowInputs>({
@@ -86,87 +90,109 @@ export const CashFlowWidget = () => {
   useEffect(() => {
     if (user) {
       loadTransactions();
+    } else {
+      setIsLoading(false);
     }
   }, [user]);
 
   const loadTransactions = async () => {
+    setIsLoading(true);
+    setDbError(null);
     try {
       const { data, error } = await supabase
         .from("cash_flow")
         .select("*")
         .eq("user_id", user?.id)
         .order("date", { ascending: false })
-        .limit(10);
+        .limit(20);
 
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase load error:", error);
+        setDbError(error.message);
+        // Keep existing local state; don't wipe it
+        return;
+      }
       setTransactions(data || []);
-    } catch (error) {
-      console.error("Error loading transactions:", error);
-      toast.error("Failed to load cash flow");
+    } catch (err: any) {
+      console.error("Unexpected load error:", err);
+      setDbError(err?.message || "Unknown error");
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleAddTransaction = async () => {
-    if (!newTransaction.amount || !newTransaction.category) {
-      toast.error("Please fill required fields");
+    // ── Validation ─────────────────────────────────────────
+    if (!newTransaction.amount || Number(newTransaction.amount) <= 0) {
+      toast.error("Please enter a valid amount greater than 0");
+      return;
+    }
+    if (!newTransaction.category.trim()) {
+      toast.error("Please enter a category (e.g. Salary, Rent, Marketing)");
+      return;
+    }
+    if (!newTransaction.date) {
+      toast.error("Please select a date");
       return;
     }
 
+    setIsSubmitting(true);
+
+    const payload = {
+      user_id: user?.id,
+      date: newTransaction.date,
+      type: newTransaction.type,
+      amount: parseFloat(newTransaction.amount),
+      category: newTransaction.category.trim(),
+      description: newTransaction.description.trim(),
+    };
+
     try {
-      const { error } = await supabase.from("cash_flow").insert({
-        user_id: user?.id,
-        date: newTransaction.date,
-        type: newTransaction.type,
-        amount: parseFloat(newTransaction.amount),
-        category: newTransaction.category,
-        description: newTransaction.description,
-      });
+      const { data, error } = await supabase
+        .from("cash_flow")
+        .insert(payload)
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase insert error:", error);
 
-      toast.success("Transaction added successfully!");
+        // ── Fallback: add to local state so UI still works ──
+        const localTx: Transaction = {
+          id: `local-${Date.now()}`,
+          ...payload,
+          amount: parseFloat(newTransaction.amount),
+          description: newTransaction.description.trim(),
+        };
+        setTransactions((prev) => [localTx, ...prev]);
+        toast.warning(
+          `Saved locally (DB error: ${error.message}). Run the dashboard migration in Supabase to persist data.`
+        );
+      } else {
+        setTransactions((prev) => [data, ...prev]);
+        toast.success("Transaction added successfully! ✅");
+      }
+
+      // Reset form & close dialog on either path
+      setNewTransaction(EMPTY_FORM);
       setIsDialogOpen(false);
-      setNewTransaction({
-        date: new Date().toISOString().split("T")[0],
-        type: "income",
-        amount: "",
-        category: "",
-        description: "",
-      });
-      loadTransactions();
-    } catch (error) {
-      console.error("Error adding transaction:", error);
-      toast.error("Failed to add transaction");
+    } catch (err: any) {
+      console.error("Unexpected insert error:", err);
+      toast.error(`Failed to add transaction: ${err?.message || "Unknown error"}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const totalIncome = transactions
     .filter((t) => t.type === "income")
-    .reduce((sum, t) => sum + t.amount, 0);
+    .reduce((sum, t) => sum + Number(t.amount), 0);
 
   const totalExpenses = transactions
     .filter((t) => t.type === "expense")
-    .reduce((sum, t) => sum + t.amount, 0);
+    .reduce((sum, t) => sum + Number(t.amount), 0);
 
   const balance = totalIncome - totalExpenses;
-
-  if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Wallet className="h-5 w-5" />
-            Cash Flow
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex items-center justify-center py-8">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </CardContent>
-      </Card>
-    );
-  }
 
   return (
     <Card>
@@ -179,300 +205,267 @@ export const CashFlowWidget = () => {
             </CardTitle>
             <CardDescription>Track income and expenses</CardDescription>
           </div>
+
+          {/* ── Add Transaction Dialog ─────────────────────── */}
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button size="sm">
+              <Button size="sm" id="add-transaction-btn">
                 <Plus className="h-4 w-4 mr-2" />
                 Add Transaction
               </Button>
             </DialogTrigger>
-            <DialogContent>
+
+            <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle>Add Transaction</DialogTitle>
                 <DialogDescription>Record income or expense</DialogDescription>
               </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <Label>Type</Label>
+
+              <div className="space-y-4 pt-2">
+                {/* Type */}
+                <div className="space-y-1">
+                  <Label htmlFor="tx-type">Type</Label>
                   <Select
                     value={newTransaction.type}
                     onValueChange={(value: "income" | "expense") =>
                       setNewTransaction({ ...newTransaction, type: value })
                     }
                   >
-                    <SelectTrigger>
+                    <SelectTrigger id="tx-type">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="income">Income</SelectItem>
-                      <SelectItem value="expense">Expense</SelectItem>
+                      <SelectItem value="income">💚 Income</SelectItem>
+                      <SelectItem value="expense">🔴 Expense</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <Label>Date</Label>
+
+                {/* Date */}
+                <div className="space-y-1">
+                  <Label htmlFor="tx-date">Date</Label>
                   <Input
+                    id="tx-date"
                     type="date"
                     value={newTransaction.date}
                     onChange={(e) =>
-                      setNewTransaction({
-                        ...newTransaction,
-                        date: e.target.value,
-                      })
+                      setNewTransaction({ ...newTransaction, date: e.target.value })
                     }
                   />
                 </div>
-                <div>
-                  <Label>Amount (₹) *</Label>
+
+                {/* Amount */}
+                <div className="space-y-1">
+                  <Label htmlFor="tx-amount">Amount (₹) *</Label>
                   <Input
+                    id="tx-amount"
                     type="number"
+                    min="1"
+                    step="any"
                     value={newTransaction.amount}
                     onChange={(e) =>
-                      setNewTransaction({
-                        ...newTransaction,
-                        amount: e.target.value,
-                      })
+                      setNewTransaction({ ...newTransaction, amount: e.target.value })
                     }
-                    placeholder="5000"
+                    placeholder="e.g. 5000"
                   />
                 </div>
-                <div>
-                  <Label>Category *</Label>
+
+                {/* Category */}
+                <div className="space-y-1">
+                  <Label htmlFor="tx-category">Category *</Label>
                   <Input
+                    id="tx-category"
                     value={newTransaction.category}
                     onChange={(e) =>
-                      setNewTransaction({
-                        ...newTransaction,
-                        category: e.target.value,
-                      })
+                      setNewTransaction({ ...newTransaction, category: e.target.value })
                     }
-                    placeholder="Salary, Rent, Marketing, etc."
+                    placeholder="Salary, Rent, Marketing, Sales…"
                   />
                 </div>
-                <div>
-                  <Label>Description</Label>
+
+                {/* Description */}
+                <div className="space-y-1">
+                  <Label htmlFor="tx-description">Description (optional)</Label>
                   <Input
+                    id="tx-description"
                     value={newTransaction.description}
                     onChange={(e) =>
-                      setNewTransaction({
-                        ...newTransaction,
-                        description: e.target.value,
-                      })
+                      setNewTransaction({ ...newTransaction, description: e.target.value })
                     }
                     placeholder="Optional notes"
                   />
                 </div>
-                <Button onClick={handleAddTransaction} className="w-full">
-                  Add Transaction
+
+                {/* Submit */}
+                <Button
+                  id="confirm-add-transaction"
+                  onClick={handleAddTransaction}
+                  className="w-full"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Saving…
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Transaction
+                    </>
+                  )}
                 </Button>
               </div>
             </DialogContent>
           </Dialog>
         </div>
       </CardHeader>
+
       <CardContent className="p-0">
         <Tabs defaultValue="tracker" className="w-full">
           <div className="px-6 border-b">
             <TabsList className="mb-4">
               <TabsTrigger value="tracker">Expense Tracker</TabsTrigger>
-              <TabsTrigger value="projection">
-                AI Projection Planner
-              </TabsTrigger>
+              <TabsTrigger value="projection">AI Projection Planner</TabsTrigger>
             </TabsList>
           </div>
 
+          {/* ── Expense Tracker Tab ──────────────────────────── */}
           <TabsContent value="tracker" className="space-y-6 p-6 mt-0">
-            {/* Balance Summary */}
+
+            {/* DB Error Banner */}
+            {dbError && (
+              <div className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg text-sm">
+                <AlertCircle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-semibold text-amber-400">Database not set up yet</p>
+                  <p className="text-muted-foreground mt-1">
+                    Run <code className="bg-muted px-1 rounded">CREATE_DASHBOARD_TABLES.sql</code> in your Supabase SQL editor to enable persistent transactions.
+                    Transactions added now are stored locally in this session.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Summary Cards */}
             <div className="grid grid-cols-3 gap-4">
               <div className="p-4 bg-muted rounded-lg text-center">
                 <p className="text-sm text-muted-foreground mb-1">Balance</p>
-                <p
-                  className={`text-2xl font-bold ${balance >= 0 ? "text-green-600" : "text-red-600"}`}
-                >
+                <p className={`text-2xl font-bold ${balance >= 0 ? "text-green-500" : "text-red-500"}`}>
                   ₹{balance.toLocaleString()}
                 </p>
               </div>
               <div className="p-4 bg-green-50 dark:bg-green-950 rounded-lg text-center border border-green-200 dark:border-green-800">
-                <p className="text-sm text-green-700 dark:text-green-300 mb-1">
-                  Income
-                </p>
-                <p className="text-2xl font-bold text-green-600">
-                  ₹{totalIncome.toLocaleString()}
-                </p>
+                <p className="text-sm text-green-700 dark:text-green-300 mb-1">Income</p>
+                <p className="text-2xl font-bold text-green-600">₹{totalIncome.toLocaleString()}</p>
               </div>
               <div className="p-4 bg-red-50 dark:bg-red-950 rounded-lg text-center border border-red-200 dark:border-red-800">
-                <p className="text-sm text-red-700 dark:text-red-300 mb-1">
-                  Expenses
-                </p>
-                <p className="text-2xl font-bold text-red-600">
-                  ₹{totalExpenses.toLocaleString()}
-                </p>
+                <p className="text-sm text-red-700 dark:text-red-300 mb-1">Expenses</p>
+                <p className="text-2xl font-bold text-red-600">₹{totalExpenses.toLocaleString()}</p>
               </div>
             </div>
 
-            {/* Recent Transactions */}
+            {/* Transactions List */}
             <div>
               <h4 className="font-semibold mb-3">Recent Transactions</h4>
-              {transactions.length > 0 ? (
+
+              {isLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : transactions.length > 0 ? (
                 <div className="space-y-2">
-                  {transactions.slice(0, 5).map((transaction) => (
+                  {transactions.slice(0, 10).map((tx) => (
                     <div
-                      key={transaction.id}
+                      key={tx.id}
                       className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
                     >
                       <div className="flex items-center gap-3">
-                        {transaction.type === "income" ? (
-                          <ArrowUpCircle className="h-5 w-5 text-green-500" />
+                        {tx.type === "income" ? (
+                          <ArrowUpCircle className="h-5 w-5 text-green-500 shrink-0" />
                         ) : (
-                          <ArrowDownCircle className="h-5 w-5 text-red-500" />
+                          <ArrowDownCircle className="h-5 w-5 text-red-500 shrink-0" />
                         )}
                         <div>
-                          <p className="font-medium">{transaction.category}</p>
+                          <p className="font-medium">{tx.category}</p>
                           <p className="text-sm text-muted-foreground">
-                            {new Date(transaction.date).toLocaleDateString()}
-                            {transaction.description &&
-                              ` • ${transaction.description}`}
+                            {new Date(tx.date).toLocaleDateString("en-IN", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            })}
+                            {tx.description && ` • ${tx.description}`}
+                            {tx.id.startsWith("local-") && (
+                              <span className="ml-2 text-xs text-amber-400">(local)</span>
+                            )}
                           </p>
                         </div>
                       </div>
-                      <p
-                        className={`font-bold ${
-                          transaction.type === "income"
-                            ? "text-green-600"
-                            : "text-red-600"
-                        }`}
-                      >
-                        {transaction.type === "income" ? "+" : "-"}₹
-                        {transaction.amount.toLocaleString()}
+                      <p className={`font-bold shrink-0 ${tx.type === "income" ? "text-green-500" : "text-red-500"}`}>
+                        {tx.type === "income" ? "+" : "-"}₹{Number(tx.amount).toLocaleString()}
                       </p>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-8">
-                  <Wallet className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground">No transactions yet</p>
+                <div className="text-center py-10">
+                  <Wallet className="h-12 w-12 text-muted-foreground mx-auto mb-3 opacity-40" />
+                  <p className="text-muted-foreground font-medium">No transactions yet</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Add your first transaction to track cash flow
+                    Click <strong>+ Add Transaction</strong> above to get started
                   </p>
                 </div>
               )}
             </div>
           </TabsContent>
 
+          {/* ── AI Projection Planner Tab ────────────────────── */}
           <TabsContent value="projection" className="space-y-6 p-6 mt-0">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Sell Price (₹)</Label>
-                <Input
-                  type="number"
-                  value={projectionInputs.price}
-                  onChange={(e) =>
-                    setProjectionInputs({
-                      ...projectionInputs,
-                      price: Number(e.target.value),
-                    })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Monthly Sales Volume</Label>
-                <Input
-                  type="number"
-                  value={projectionInputs.monthlySales}
-                  onChange={(e) =>
-                    setProjectionInputs({
-                      ...projectionInputs,
-                      monthlySales: Number(e.target.value),
-                    })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Fixed Costs (₹)</Label>
-                <Input
-                  type="number"
-                  value={projectionInputs.fixedCosts}
-                  onChange={(e) =>
-                    setProjectionInputs({
-                      ...projectionInputs,
-                      fixedCosts: Number(e.target.value),
-                    })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Variable Cost per Unit (₹)</Label>
-                <Input
-                  type="number"
-                  value={projectionInputs.variableCosts}
-                  onChange={(e) =>
-                    setProjectionInputs({
-                      ...projectionInputs,
-                      variableCosts: Number(e.target.value),
-                    })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Marketing Budget (₹)</Label>
-                <Input
-                  type="number"
-                  value={projectionInputs.marketingBudget}
-                  onChange={(e) =>
-                    setProjectionInputs({
-                      ...projectionInputs,
-                      marketingBudget: Number(e.target.value),
-                    })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Estimated Tax (%)</Label>
-                <Input
-                  type="number"
-                  value={projectionInputs.taxPercent}
-                  onChange={(e) =>
-                    setProjectionInputs({
-                      ...projectionInputs,
-                      taxPercent: Number(e.target.value),
-                    })
-                  }
-                />
-              </div>
+              {[
+                { label: "Sell Price (₹)", key: "price" as const },
+                { label: "Monthly Sales Volume", key: "monthlySales" as const },
+                { label: "Fixed Costs (₹)", key: "fixedCosts" as const },
+                { label: "Variable Cost per Unit (₹)", key: "variableCosts" as const },
+                { label: "Marketing Budget (₹)", key: "marketingBudget" as const },
+                { label: "Estimated Tax (%)", key: "taxPercent" as const },
+              ].map(({ label, key }) => (
+                <div className="space-y-2" key={key}>
+                  <Label>{label}</Label>
+                  <Input
+                    type="number"
+                    value={projectionInputs[key]}
+                    onChange={(e) =>
+                      setProjectionInputs({ ...projectionInputs, [key]: Number(e.target.value) })
+                    }
+                  />
+                </div>
+              ))}
             </div>
 
+            {/* Calculated Results */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-4">
               <div className="p-4 bg-muted rounded-lg border">
                 <p className="text-sm text-muted-foreground">Monthly Revenue</p>
-                <p className="text-xl font-bold">
-                  ₹{projectionResult.monthlyRevenue}
-                </p>
+                <p className="text-xl font-bold">₹{projectionResult.monthlyRevenue.toLocaleString()}</p>
               </div>
               <div className="p-4 bg-muted rounded-lg border">
                 <p className="text-sm text-muted-foreground">Gross Profit</p>
-                <p className="text-xl font-bold">
-                  ₹{projectionResult.grossProfit}
-                </p>
+                <p className="text-xl font-bold">₹{projectionResult.grossProfit.toLocaleString()}</p>
               </div>
               <div className="p-4 bg-green-50 dark:bg-green-950 rounded-lg border border-green-200 dark:border-green-800">
-                <p className="text-sm text-green-700 dark:text-green-300">
-                  Net Profit
-                </p>
-                <p className="text-xl font-bold text-green-600">
-                  ₹{projectionResult.netProfit}
+                <p className="text-sm text-green-700 dark:text-green-300">Net Profit</p>
+                <p className={`text-xl font-bold ${projectionResult.netProfit >= 0 ? "text-green-600" : "text-red-600"}`}>
+                  ₹{projectionResult.netProfit.toLocaleString()}
                 </p>
               </div>
               <div className="p-4 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
-                <p className="text-sm text-blue-700 dark:text-blue-300">
-                  Break-even Point
-                </p>
-                <p className="text-xl font-bold text-blue-600">
-                  {projectionResult.breakEvenPoint} Units
-                </p>
+                <p className="text-sm text-blue-700 dark:text-blue-300">Break-even Point</p>
+                <p className="text-xl font-bold text-blue-600">{projectionResult.breakEvenPoint} Units</p>
               </div>
             </div>
 
+            {/* 12-Month Chart */}
             <div className="h-[300px] w-full border rounded-lg p-4">
               <h4 className="font-semibold mb-4 text-sm text-muted-foreground">
                 12-Month Projection Tracker
@@ -484,32 +477,11 @@ export const CashFlowWidget = () => {
                 >
                   <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                   <XAxis dataKey="month" fontSize={12} tickMargin={10} />
-                  <YAxis
-                    fontSize={12}
-                    tickFormatter={(value) => `₹${value / 1000}k`}
-                  />
-                  <RechartsTooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="revenue"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    name="Revenue"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="profit"
-                    stroke="#22c55e"
-                    strokeWidth={2}
-                    name="Net Profit"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="expenses"
-                    stroke="#ef4444"
-                    strokeWidth={2}
-                    name="Expenses"
-                  />
+                  <YAxis fontSize={12} tickFormatter={(v) => `₹${v / 1000}k`} />
+                  <RechartsTooltip formatter={(v: number) => `₹${v.toLocaleString()}`} />
+                  <Line type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={2} name="Revenue" dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="profit" stroke="#22c55e" strokeWidth={2} name="Net Profit" dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="expenses" stroke="#ef4444" strokeWidth={2} name="Expenses" dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

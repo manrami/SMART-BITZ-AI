@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
-  LayoutDashboard, TrendingUp, DollarSign, Target, Megaphone,
+  LayoutDashboard, TrendingUp, Megaphone,
   Globe, Package, Users, MapPin, Calculator, IndianRupee,
   BarChart3, ShoppingCart, Lightbulb, AlertCircle, CheckCircle2,
   ArrowRight, RefreshCw,
@@ -28,6 +28,7 @@ import { ProgressDashboard } from "@/components/dashboard/ProgressDashboard";
 import { ProductIntelligencePanel } from "@/components/bi/ProductIntelligencePanel";
 import { EnrichedSupplierTab } from "@/components/bi/EnrichedSupplierTab";
 import { RawMaterialsEnriched } from "@/components/bi/RawMaterialsEnriched";
+import { RecipeFlow } from "@/components/bi/RecipeFlow";
 import { motion } from "framer-motion";
 import { BusinessPlan } from "@/types/business";
 
@@ -206,12 +207,7 @@ const DashboardPage = () => {
     { code: "mr", flag: "🗺️", label: "म" },
   ];
 
-  const quickStats = [
-    { id: "inv", title: t.investment, value: plan?.idea?.investmentRange || "—", subtitle: t.required, icon: DollarSign, color: "from-violet-500/20 to-violet-500/5", iconColor: "text-violet-500" },
-    { id: "rev", title: t.revenue, value: plan?.idea?.expectedRevenue || "—", subtitle: t.expectedPerMonth, icon: TrendingUp, color: "from-emerald-500/20 to-emerald-500/5", iconColor: "text-emerald-500" },
-    { id: "pm", title: t.profitMargin, value: plan?.idea?.profitMargin || "—", subtitle: t.estimated, icon: Target, color: "from-amber-500/20 to-amber-500/5", iconColor: "text-amber-500" },
-    { id: "be", title: t.breakeven, value: plan?.idea?.breakEvenTime || "—", subtitle: t.timeToProfit, icon: Megaphone, color: "from-pink-500/20 to-pink-500/5", iconColor: "text-pink-500" },
-  ];
+
 
   const loadPlan = useCallback(async () => {
     setIsLoading(true);
@@ -323,7 +319,7 @@ const DashboardPage = () => {
                       </button>
                     ))}
                   </div>
-                  <Button size="sm" variant="ghost" className="text-primary-foreground/80 hover:text-white hover:bg-white/10 rounded-full gap-2" onClick={() => navigate("/business-plan")}>
+                  <Button size="sm" variant="ghost" className="text-primary-foreground/80 hover:text-white hover:bg-white/10 rounded-full gap-2" onClick={() => navigate("/plan")}>
                     <ArrowRight className="h-4 w-4" /><span className="hidden sm:inline">{t.fullPlan}</span>
                   </Button>
                   <Button size="sm" variant="ghost" className="text-primary-foreground/80 hover:text-white hover:bg-white/10 rounded-full gap-2" onClick={loadPlan}>
@@ -346,20 +342,6 @@ const DashboardPage = () => {
                   </div>
                   <p className="text-primary-foreground/70 text-sm max-w-2xl">{plan.idea.description}</p>
                 </div>
-              </div>
-
-              {/* Stat cards */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {quickStats.map((stat, i) => (
-                  <motion.div key={stat.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: i * 0.08 }}>
-                    <div className="bg-white/15 backdrop-blur-md rounded-2xl p-4 border border-white/20 hover:bg-white/25 transition-colors">
-                      <stat.icon className="h-5 w-5 text-white/70 mb-2" />
-                      <p className="text-xs text-white/60 uppercase tracking-wider font-semibold mb-1">{stat.title}</p>
-                      <p className="font-bold text-white text-sm leading-tight">{stat.value}</p>
-                      <p className="text-xs text-white/40 mt-0.5">{stat.subtitle}</p>
-                    </div>
-                  </motion.div>
-                ))}
               </div>
             </div>
           </div>
@@ -430,6 +412,7 @@ const DashboardPage = () => {
                 <EnrichedSupplierTab
                   materials={plan.rawMaterials || []}
                   businessType={plan.idea.name}
+                  productName={plan.product?.name}
                   lang={lang}
                 />
               </PlanSection>
@@ -454,26 +437,13 @@ const DashboardPage = () => {
                 </div>
               </PlanSection>
 
-              {plan.productionPlan && plan.productionPlan.length > 0 && (
-                <div className="mt-8">
-                  <PlanSection icon={Package} title={t.productionTitle}>
-                    <div className="space-y-4">
-                      {plan.productionPlan.map((step, i) => (
-                        <div key={i} className="p-5 rounded-2xl border border-border/50 bg-card space-y-3 shadow-sm hover:border-primary/30 transition-colors">
-                          <h4 className="font-semibold text-base text-primary flex items-center gap-3">
-                            <span className="flex items-center justify-center w-7 h-7 rounded-full bg-primary/10 text-primary text-sm font-bold border border-primary/20">{i + 1}</span>
-                            {step.step}
-                          </h4>
-                          <p className="text-sm text-muted-foreground leading-relaxed pl-10">{step.description}</p>
-                          <div className="flex items-start gap-2 text-sm text-success bg-success/5 border border-success/10 p-3 rounded-xl ml-10">
-                            <IndianRupee className="h-4 w-4 mt-0.5 shrink-0" /><span>{step.costVsTime}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </PlanSection>
-                </div>
-              )}
+              <div className="mt-8">
+                <RecipeFlow
+                  businessType={plan.idea.name}
+                  productName={plan.product?.name}
+                  fallbackPlan={plan.productionPlan}
+                />
+              </div>
 
               {/* AI-enriched material intelligence + food recipe breakdown */}
               {(plan.rawMaterials || []).length > 0 && (

@@ -10,6 +10,11 @@ import {
   LayoutDashboard,
   Trophy,
   UserCircle,
+  FileCheck,
+  TrendingUp,
+  BookOpen,
+  Users2,
+  Target
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ThemeToggle from "@/components/ui/ThemeToggle";
@@ -50,11 +55,10 @@ export function Header() {
 
   return (
     <header
-      className={`sticky top-0 z-50 w-full transition-all duration-300 ${
-        scrolled
-          ? "bg-background/95 backdrop-blur-md border-b border-border shadow-lg"
-          : "bg-transparent border-b border-transparent"
-      }`}
+      className={`sticky top-0 z-50 w-full transition-all duration-300 ${scrolled
+        ? "bg-background/95 backdrop-blur-md border-b border-border shadow-lg"
+        : "bg-transparent border-b border-transparent"
+        }`}
     >
       <div
         className={`container flex h-16 items-center justify-between relative ${!scrolled ? "text-shadow-glow" : ""}`}
@@ -137,6 +141,36 @@ export function Header() {
                     <Link to="/saved-plans" className="cursor-pointer">
                       <FolderOpen className="h-4 w-4 mr-2" />
                       Saved Plans
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/compliance" className="cursor-pointer">
+                      <FileCheck className="h-4 w-4 mr-2" />
+                      Compliance Center
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/insights" className="cursor-pointer">
+                      <TrendingUp className="h-4 w-4 mr-2" />
+                      Market Insights
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/khata" className="cursor-pointer">
+                      <BookOpen className="h-4 w-4 mr-2" />
+                      Digital Khata & ERP
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/community" className="cursor-pointer">
+                      <Users2 className="h-4 w-4 mr-2" />
+                      Founder Community
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/competitor" className="cursor-pointer">
+                      <Target className="h-4 w-4 mr-2" />
+                      Competitor Analysis
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>

@@ -7,8 +7,10 @@ All functions are pure helpers called by bi_routes.py Blueprint.
 import json
 import time
 import logging
-from openai import OpenAI
 import os
+import re
+import requests
+from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -29,20 +31,19 @@ def _cache_set(key: str, data):
     _CACHE[key] = (time.time(), data)
 
 
-def _get_openrouter_client() -> OpenAI:
+def _get_ai_client() -> OpenAI:
+    """Returns a Groq client (fast, free, OpenAI-compatible)."""
     return OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.getenv("OPENROUTER_API_KEY"),
+        base_url="https://api.groq.com/openai/v1",
+        api_key=os.getenv("GROQ_API_KEY"),
     )
 
-
-MODEL = "meta-llama/llama-3.1-8b-instruct"
-
+MODEL = "llama-3.1-8b-instant"
 
 def _call_ai(prompt: str, context: str = "") -> dict:
-    """Call AI with graceful degradation — never raises."""
+    """Call AI via Groq (OpenAI-compatible, free llama models)."""
     try:
-        client = _get_openrouter_client()
+        client = _get_ai_client()
         messages = []
         if context:
             messages.append({"role": "system", "content": context})
@@ -56,19 +57,22 @@ def _call_ai(prompt: str, context: str = "") -> dict:
         )
         raw = response.choices[0].message.content.strip()
         
-        # Extract JSON from response
+        # Extract JSON from response boundaries
         if "```json" in raw:
             raw = raw.split("```json")[1].split("```")[0].strip()
         elif "```" in raw:
             raw = raw.split("```")[1].split("```")[0].strip()
-        
+            
+        json_match = re.search(r'\{[\s\S]*\}', raw)
+        if json_match:
+            raw = json_match.group(0)
+
         return json.loads(raw)
-    except json.JSONDecodeError as e:
-        logger.error(f"AI JSON parse error: {e}")
-        return None
     except Exception as e:
-        logger.error(f"AI call failed: {e}")
-        return None
+        logger.error(f"BI AI Call failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {}
 
 
 
@@ -218,78 +222,144 @@ Return ONLY valid JSON:
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. ENRICHED SUPPLIERS
 # ─────────────────────────────────────────────────────────────────────────────
+def _search_serpapi(query: str):
+    api_key = os.getenv("SERPAPI_KEY")
+    if not api_key: return []
+    try:
+        url = "https://serpapi.com/search"
+        params = {"engine": "google", "q": query, "api_key": api_key, "gl": "in", "hl": "en", "num": 5}
+        resp = requests.get(url, params=params, timeout=5)
+        data = resp.json()
+        results = data.get("organic_results", [])
+        return [{"title": r.get("title"), "link": r.get("link"), "snippet": r.get("snippet")} for r in results[:5]]
+    except Exception as e:
+        logger.error(f"SerpApi Error: {e}")
+        return []
+
 def get_enriched_suppliers(business_type: str, product_name: str, city: str = "India") -> dict:
     cache_key = f"suppliers:{business_type}:{product_name}:{city}"
     cached = _cache_get(cache_key)
     if cached:
         return cached
 
-    prompt = f"""
-You are a supply chain consultant. Find realistic verified suppliers for:
+    location_context = city.strip() if city and city.strip().lower() not in ("india", "not specified", "") else "India"
+    is_specific_city = location_context.lower() not in ("india",)
 
-Business Type: {business_type}
-Product: {product_name}
-Location preference: {city or "India"}
+    serp_data = ""
+    api_key = os.getenv("SERPAPI_KEY")
+    if api_key:
+        query = f'site:indiamart.com OR site:tradeindia.com "{product_name}" supplier OR manufacturer OR wholesaler {location_context}'
+        live_results = _search_serpapi(query)
+        if live_results:
+            serp_data = "\n\nCRITICAL: REAL LIVE SUPPLIERS FOUND FROM INDIA MART/TRADEINDIA:\n"
+            for r in live_results:
+                title = r['title'].split(' - ')[0].split('|')[0] # Clean up IndiaMART SEO titles
+                serp_data += f"- Company Name: {title}\n  Profile Link: {r['link']}\n  Snippet: {r['snippet']}\n"
+            serp_data += "\nYOU MUST USE EXACTLY THESE REAL COMPANIES FROM ABOVE. Set 'website' to their Profile Link. Set 'phone' to null. Set 'email' to null."
+
+    prompt = f"""You are a supply chain expert with deep knowledge of the Indian B2B market.
+
+TASK: Research and list REAL, VERIFIED suppliers for the following:
+- Product to source: {product_name}
+- Business type: {business_type}
+- Buyer location: {location_context}
+
+STRICT RULES:
+1. ONLY use REAL company names that actually exist — from IndiaMART, TradeIndia, JustDial, GEM Portal, MSME directories, or well-known wholesale markets.
+2. DO NOT invent company names, phone numbers, emails, or websites. If you do not know the website or email of a real company, SET THAT FIELD TO null.
+3. PRIORITIZE suppliers in this order:
+   {"a) Local suppliers in " + location_context + " first" if is_specific_city else "a) Major India-level or state-level suppliers first"}
+   {"b) State-level suppliers if city-level not sufficient" if is_specific_city else "b) Export-capable suppliers as secondary"}
+   {"c) National wholesale or online B2B platforms last" if is_specific_city else "c) Online B2B platforms like IndiaMART, TradeIndia"}
+4. `verified` must be true ONLY if this is a real, operating business you are confident about.
+5. If no local suppliers exist in {location_context} for this product, say so in sourcing_tips and list the best India-level alternatives.
+6. Mention real market names when relevant (e.g. "Crawford Market Mumbai", "Khari Baoli Delhi", "Manish Market Chennai").
 
 Return ONLY valid JSON:
 {{
   "suppliers": [
     {{
-      "name": "Supplier Company Name",
+      "name": "Real Company or Market Name",
       "country": "India",
-      "city": "Mumbai",
-      "email": "contact@example.com",
-      "phone": "+91 22 1234 5678",
-      "moq": "100 units",
-      "approx_cost": "₹500-₹1,200 per unit",
-      "rating": 4.3,
-      "export_capable": true,
-      "website": "www.example.com",
-      "specialization": "What they specialize in",
-      "delivery_time": "3-5 days",
-      "payment_terms": "30% advance, 70% on delivery",
-      "pros": ["Wide variety", "GST billing"],
-      "cons": ["Min order required"],
+      "city": "Actual city of this supplier",
+      "phone": "+91 XXXXXXXXXX or null",
+      "email": "real@email.com or null",
+      "website": "www.realsite.com or null",
+      "moq": "Realistic minimum order (e.g. 50 kg, 100 units, ₹2,000)",
+      "approx_cost": "Real price range for {product_name} (e.g. ₹120-₹180 per kg)",
+      "rating": 4.1,
+      "export_capable": false,
+      "supplier_type": "Local Wholesale / National Distributor / Manufacturer / Online B2B",
+      "specialization": "Specific products they supply",
+      "delivery_time": "X-Y days",
+      "payment_terms": "Advance / 30-day credit / COD etc.",
+      "pros": ["Specific advantage"],
+      "cons": ["Specific limitation"],
       "verified": true
     }}
   ],
-  "alternative_countries": ["China", "Bangladesh"],
-  "sourcing_tips": "Brief tip on best sourcing strategy"
+  "alternative_countries": ["Country1"],
+  "sourcing_tips": "Specific actionable advice for sourcing {product_name} in {location_context}. Include names of local wholesale markets if known."
 }}
+{serp_data}
 
-Include 5-7 diverse suppliers (mix of local, pan-India, and international where relevant).
+Provide 5-7 suppliers. REAL DATA ONLY. Set email/phone/website to null if not confidently known.
 """
-    result = _call_ai(prompt, "You are a professional supply chain consultant for Indian SMEs.")
+    result = _call_ai(
+        prompt,
+        "You are an Indian B2B supply chain intelligence system. Only output real existing companies. Never fabricate contact details — use null for unknown fields."
+    )
 
     if not result:
         result = {
             "suppliers": [
                 {
-                    "name": "IndiaMART Verified Network",
+                    "name": "IndiaMART — Search Local Verified Suppliers",
                     "country": "India",
-                    "city": "Pan India",
-                    "email": "buyer@indiamart.com",
+                    "city": location_context,
+                    "email": None,
                     "phone": "+91 96 9696 9696",
-                    "moq": "₹5,000 minimum",
-                    "approx_cost": "Market rate",
+                    "moq": "Depends on supplier",
+                    "approx_cost": "Market rate — compare multiple quotes",
                     "rating": 4.2,
                     "export_capable": False,
                     "website": "www.indiamart.com",
-                    "specialization": "B2B marketplace for all categories",
-                    "delivery_time": "2-7 days",
+                    "specialization": f"Search for '{product_name}' to find verified local vendors near {location_context}",
+                    "delivery_time": "Varies by seller",
                     "payment_terms": "Varies by seller",
-                    "pros": ["Verified sellers", "Wide variety"],
-                    "cons": ["Quality varies"],
+                    "pros": ["Verified seller badges", "Wide variety", "Buyer protection"],
+                    "cons": ["Quality varies — always request samples first"],
                     "verified": True,
-                }
+                    "supplier_type": "Online B2B Platform",
+                },
+                {
+                    "name": "TradeIndia — B2B Supplier Directory",
+                    "country": "India",
+                    "city": "Pan India",
+                    "email": None,
+                    "phone": None,
+                    "moq": "Depends on supplier",
+                    "approx_cost": "Market rate",
+                    "rating": 4.0,
+                    "export_capable": True,
+                    "website": "www.tradeindia.com",
+                    "specialization": f"Find manufacturers and wholesalers for '{product_name}' across India",
+                    "delivery_time": "Varies",
+                    "payment_terms": "Varies",
+                    "pros": ["Free buyer account", "Verified listings"],
+                    "cons": ["Contact seller to confirm stock"],
+                    "verified": True,
+                    "supplier_type": "Online B2B Platform",
+                },
             ],
-            "alternative_countries": ["China", "Bangladesh"],
-            "sourcing_tips": "Start with IndiaMART for local suppliers, then explore direct manufacturer connections.",
+            "alternative_countries": [],
+            "sourcing_tips": f"Search '{product_name} supplier in {location_context}' on IndiaMART and TradeIndia. Always request samples before bulk ordering.",
             "_fallback": True,
         }
 
     _cache_set(cache_key, result)
     return result
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -12,18 +12,20 @@ const BASE = "http://127.0.0.1:5000/api/bi";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 // ── localStorage cache helpers ────────────────────────────────────────────────
+const CACHE_PREFIX = "bi_v2:";
+
 function cacheGet<T>(key: string): T | null {
     try {
-        const raw = localStorage.getItem(`bi:${key}`);
+        const raw = localStorage.getItem(`${CACHE_PREFIX}${key}`);
         if (!raw) return null;
         const { ts, data } = JSON.parse(raw);
-        if (Date.now() - ts > CACHE_TTL_MS) { localStorage.removeItem(`bi:${key}`); return null; }
+        if (Date.now() - ts > CACHE_TTL_MS) { localStorage.removeItem(`${CACHE_PREFIX}${key}`); return null; }
         return data as T;
     } catch { return null; }
 }
 
 function cacheSet(key: string, data: unknown) {
-    try { localStorage.setItem(`bi:${key}`, JSON.stringify({ ts: Date.now(), data })); }
+    try { localStorage.setItem(`${CACHE_PREFIX}${key}`, JSON.stringify({ ts: Date.now(), data })); }
     catch { /* storage full — skip */ }
 }
 

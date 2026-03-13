@@ -40,6 +40,7 @@ export interface EnrichedSupplier {
     pros: string[];
     cons: string[];
     verified: boolean;
+    supplier_type?: string;
 }
 
 export interface EnrichedSuppliersData {

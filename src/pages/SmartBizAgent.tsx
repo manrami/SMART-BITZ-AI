@@ -47,6 +47,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { BusinessCard } from "@/components/recommendations/BusinessCard";
 import { BusinessIdea, Product } from "@/types/business";
 import { ProductSelector } from "@/components/recommendations/ProductSelector";
+import { VoiceInputBtn } from "@/components/voice/VoiceInputBtn";
 
 const SmartBizAgent = () => {
   const navigate = useNavigate();
@@ -127,7 +128,7 @@ const SmartBizAgent = () => {
         id: currentSessionId,
         title: chatService.generateTitle(
           messages.find((m) => m.role === "user")?.content ||
-            "New Conversation",
+          "New Conversation",
         ),
         messages,
         state: state || { step_index: 0, answers: {} },
@@ -538,11 +539,10 @@ const SmartBizAgent = () => {
                     style={{ animationDelay: `${i * 0.05}s` }}
                   >
                     <div
-                      className={`max-w-[85%] md:max-w-[75%] rounded-2xl px-4 py-2 ${
-                        msg.role === "user"
+                      className={`max-w-[85%] md:max-w-[75%] rounded-2xl px-4 py-2 ${msg.role === "user"
                           ? "gradient-primary text-primary-foreground rounded-tr-none shadow-lg"
                           : "glass text-foreground rounded-tl-none hover:glass-strong transition-all"
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center gap-2 mb-1">
                         {msg.role === "agent" ? (
@@ -644,6 +644,10 @@ const SmartBizAgent = () => {
                 disabled={isLoading}
                 className="flex-1 glass-subtle"
                 autoFocus
+              />
+              <VoiceInputBtn
+                onTranscript={(text) => setInput(prev => prev + (prev.length > 0 ? ' ' : '') + text)}
+                disabled={isLoading}
               />
               <Button
                 type="submit"

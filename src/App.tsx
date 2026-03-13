@@ -18,6 +18,11 @@ const TrackingParametersPage = React.lazy(() => import("./pages/TrackingParamete
 const SignupPage = React.lazy(() => import("./pages/SignupPage"));
 const ProfilePage = React.lazy(() => import("./pages/ProfilePage"));
 const ScoreboardPage = React.lazy(() => import("./pages/ScoreboardPage"));
+const CompliancePage = React.lazy(() => import("./pages/CompliancePage"));
+const MarketInsightsPage = React.lazy(() => import("./pages/MarketInsightsPage"));
+const KhataErpPage = React.lazy(() => import("./pages/KhataErpPage"));
+const CommunityPage = React.lazy(() => import("./pages/CommunityPage"));
+const CompetitorPage = React.lazy(() => import("./pages/CompetitorPage"));
 const NotFound = React.lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -58,6 +63,11 @@ const App = () => {
                   />
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/scoreboard" element={<ScoreboardPage />} />
+                  <Route path="/compliance" element={<CompliancePage />} />
+                  <Route path="/insights" element={<MarketInsightsPage />} />
+                  <Route path="/khata" element={<KhataErpPage />} />
+                  <Route path="/community" element={<CommunityPage />} />
+                  <Route path="/competitor" element={<CompetitorPage />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>

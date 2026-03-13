@@ -104,6 +104,7 @@ export type DashboardTemplate =
 
 export interface BusinessPlan {
   idea: BusinessIdea;
+  product?: Product;
   rawMaterials: RawMaterial[];
   productionPlan?: ProductionStep[];
   workforce: WorkforceRequirement[];

@@ -12,6 +12,7 @@ from services.bi_service import (
     get_recipe_breakdown,
     get_business_products,
 )
+from services.plan_service import generate_business_plan
 import logging
 
 logger = logging.getLogger(__name__)
@@ -128,3 +129,31 @@ def product_list():
     except Exception as e:
         logger.error(f"product-list error: {e}")
         return jsonify({"success": False, "error": str(e), "products": []}), 500
+
+
+@bi_bp.route("/generate-business-plan", methods=["POST", "OPTIONS"])
+def complete_business_plan():
+    """Generate a full business plan using the local backend to bypass Edge Function API Key issues."""
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+        
+    try:
+        data = request.get_json() or {}
+        user_profile = data.get("userProfile", {})
+        selected_business = data.get("selectedBusiness", {})
+        selected_product = data.get("selectedProduct", {})
+
+        if not user_profile or not selected_business:
+            return jsonify({"error": "userProfile and selectedBusiness are required"}), 400
+
+        result = generate_business_plan(user_profile, selected_business, selected_product)
+        
+        if "error" in result:
+             return jsonify(result), 500
+             
+        # The frontend expects the JSON to be at the root of the response
+        return jsonify(result), 200
+
+    except Exception as e:
+        logger.error(f"Generate Business Plan error: {e}")
+        return jsonify({"error": str(e)}), 500

@@ -19,6 +19,7 @@ interface BudgetPredictionProps {
     predicted_budget: number;
     user_budget: number;
     feasibility: any;
+    business_idea: string;
   }) => void;
 }
 
@@ -85,13 +86,7 @@ export const BudgetPredictionFlow = ({ onComplete }: BudgetPredictionProps) => {
       const data = await response.json();
       setFeasibility(data.feasibility);
       setStep("user_budget");
-
-      // Call onComplete to pass data to parent
-      onComplete({
-        predicted_budget: predictedBudget!,
-        user_budget: budget,
-        feasibility: data.feasibility,
-      });
+      // onComplete called when user clicks "Continue to Next Step"
     } catch (error) {
       console.error("Feasibility analysis error:", error);
       toast.error("Failed to analyze feasibility. Please try again.");
@@ -306,10 +301,12 @@ export const BudgetPredictionFlow = ({ onComplete }: BudgetPredictionProps) => {
 
             <Button
               onClick={() => {
-                toast.success(
-                  "Budget analysis complete! Proceeding to next step...",
-                );
-                // Parent component will handle navigation
+                onComplete({
+                  predicted_budget: predictedBudget!,
+                  user_budget: parseFloat(userBudget),
+                  feasibility,
+                  business_idea: businessIdea,
+                });
               }}
               className="w-full"
             >

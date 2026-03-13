@@ -185,7 +185,7 @@ export const BusinessNameStep = ({
                   value={selectedName}
                   onValueChange={setSelectedName}
                 >
-                  <div className="space-y-3">
+                  <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
                     {suggestions.map((suggestion, index) => (
                       <div key={index} className="relative">
                         <RadioGroupItem
