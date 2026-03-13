@@ -1,4 +1,4 @@
-# StartupDesk - AI Business Intelligence Platform 🚀
+# SMART-BITZ-AI - AI Business Intelligence Platform 🚀
 
 **StartupDesk** is a next-generation AI-powered business intelligence and planning platform designed to help aspiring entrepreneurs, small business owners, and creators turn their ideas into actionable, data-driven, and highly detailed business plans. It acts as an AI co-founder, handling everything from market research and financial forecasting to supplier sourcing and marketing strategies.
 
