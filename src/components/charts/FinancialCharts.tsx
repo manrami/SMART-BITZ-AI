@@ -20,6 +20,7 @@ import { TrendingUp, PieChart as PieChartIcon, BarChart3 } from "lucide-react";
 interface FinancialChartsProps {
   idea: BusinessIdea;
   pricing?: {
+    costComponents?: string[];
     costPrice: string;
     suggestedPrice: string;
     profitMargin: string;
@@ -94,14 +95,73 @@ export function FinancialCharts({ idea, pricing }: FinancialChartsProps) {
     },
   ];
 
-  // Cost breakdown data
-  const costBreakdownData = [
+  // Cost breakdown data - make it dynamic based on AI pricing components if available
+  const defaultCostBreakdown = [
     { name: "Raw Materials", value: 45, color: "hsl(var(--primary))" },
     { name: "Rent & Utilities", value: 15, color: "hsl(var(--chart-2))" },
     { name: "Staff Salaries", value: 20, color: "hsl(var(--chart-3))" },
     { name: "Marketing", value: 10, color: "hsl(var(--chart-4))" },
     { name: "Miscellaneous", value: 10, color: "hsl(var(--chart-5))" },
   ];
+
+  let costBreakdownData = defaultCostBreakdown;
+
+  if (pricing && pricing.costComponents && pricing.costComponents.length > 0) {
+    const defaultColors = [
+      "hsl(var(--primary))",
+      "hsl(var(--chart-2))",
+      "hsl(var(--chart-3))",
+      "hsl(var(--chart-4))",
+      "hsl(var(--chart-5))",
+    ];
+
+    let totalPercentage = 0;
+    const parsedData = pricing.costComponents.map((comp, index) => {
+      // Look for a percentage in the string, e.g., "Raw Materials: 40%"
+      const match = comp.match(/(\d+(?:\.\d+)?)\s*%/);
+      const percentage = match ? parseFloat(match[1]) : 0;
+      totalPercentage += percentage;
+
+      // Clean the name
+      let name = comp;
+      if (match) {
+        // Remove the percentage, and any trailing colons or dashes
+        name = name.replace(match[0], "").replace(/[:\-]+/g, "").trim();
+      }
+
+      // Max words limit for cleaner display
+      if (name.length > 25) {
+        name = name.substring(0, 25) + "...";
+      }
+
+      return {
+        name: name || `Component ${index + 1}`,
+        value: percentage,
+        color: defaultColors[index % defaultColors.length],
+      };
+    });
+
+    // If AI gave valid percentages that roughly add up to 90-100%, use them
+    if (totalPercentage >= 90 && totalPercentage <= 101) {
+      costBreakdownData = parsedData;
+    } else {
+      // If no valid percentages found, distribute 100% evenly among the components
+      const evenDist = Math.floor(100 / pricing.costComponents.length);
+      let remainder = 100 - (evenDist * pricing.costComponents.length);
+      
+      costBreakdownData = parsedData.map((item, index) => {
+        let val = evenDist;
+        if (remainder > 0) {
+          val += 1;
+          remainder -= 1;
+        }
+        return {
+          ...item,
+          value: val,
+        };
+      });
+    }
+  }
 
   const formatCurrency = (value: number) => {
     if (value >= 100000) {
